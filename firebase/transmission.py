@@ -18,7 +18,8 @@ firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-def on_snapshot(col_snapshot, changes, read_time):
+def on_send_snapshot(col_snapshot, changes, read_time):
+    print("わ")
     for doc in col_snapshot:
         print(f"{doc.id}")
 
@@ -26,6 +27,22 @@ def on_snapshot(col_snapshot, changes, read_time):
 
         send_command(doc_dict["name"], doc_dict["code"])
         doc.reference.update({"state": False})
+
+def on_get_snapshot(col_snapshot, changes, read_time):
+    print("あ")
+    for doc in col_snapshot:
+        print(f"{doc.id}")
+
+        doc_dict = doc.to_dict()
+
+        get_command()
+
+        db.collection("codes").document().set({
+            "name": doc_dict["name"],
+            "code": "[wawawa]",
+            "state": False,
+        })
+        doc.reference.delete()
 
 def send_command(name: str, code: str) -> bool:
     try:
@@ -48,10 +65,17 @@ def send_command(name: str, code: str) -> bool:
         return False
 
 
+def get_command():
+    pass
+
 
 # col_query = db.collection('codes').where('state', '==', True)
-col_query = db.collection('codes').where(filter=FieldFilter("state", "==", True))
-query_watch = col_query.on_snapshot(on_snapshot)
+send_query = db.collection("codes").where(filter=FieldFilter("state", "==", True))
+send_query_watch = send_query.on_snapshot(on_send_snapshot)
+
+get_query = db.collection("unregisteredCodes")
+get_query_watch = get_query.on_snapshot(on_get_snapshot)
+
 
 try:
     while True:
