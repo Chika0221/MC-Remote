@@ -3,6 +3,7 @@ from firebase_admin import credentials
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+import json
 import time
 import subprocess
 import sys
@@ -35,11 +36,16 @@ def on_get_snapshot(col_snapshot, changes, read_time):
 
         doc_dict = doc.to_dict()
 
-        get_command()
+        try:
+            code_list = get_command(doc_dict["name"])
+        except Exception as e:
+            # Stop re-trigger loops; keep the request doc for inspection.
+            doc.reference.update({"state": False, "error": str(e)})
+            continue
 
         db.collection("codes").document().set({
             "name": doc_dict["name"],
-            "code": "[wawawa]",
+            "code": json.dumps(code_list),
             "state": False,
         })
         doc.reference.delete()
@@ -65,8 +71,70 @@ def send_command(name: str, code: str) -> bool:
         return False
 
 
-def get_command():
-    pass
+def get_command(name: str) -> list[int]:
+    """Record one IR code for `name` and return it as list[int] microseconds.
+
+    Uses irrp.py record mode and reads the newly-recorded code from stdout.
+    """
+
+    # python3 irrp.py -r -g18 -f codes light:on --no-confirm --post 130
+    try:
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(IRRP_PATH),
+                "-r",
+                "-g18",
+                "-f",
+                str(CODES_PATH),
+                name,
+                "--no-confirm",
+                "--post",
+                str(130),
+                "--export",
+                "-",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "").strip()
+        raise RuntimeError(f"irrp.py record failed: {stderr or e}") from e
+
+    # irrp.py should print ONLY a JSON dict like {"name": [..]} to stdout when using --export -.
+    # Be tolerant anyway: grab the last line that looks like JSON.
+    stdout = proc.stdout or ""
+    lines = [ln.strip() for ln in stdout.splitlines() if ln.strip()]
+    if not lines:
+        raise RuntimeError("irrp.py returned no exported JSON on stdout")
+
+    json_line = None
+    for ln in reversed(lines):
+        if (ln.startswith("{") and ln.endswith("}")) or (ln.startswith("[") and ln.endswith("]")):
+            json_line = ln
+            break
+    if json_line is None:
+        tail = "\\n".join(lines[-5:])
+        raise RuntimeError(f"irrp.py stdout did not contain JSON. tail=\\n{tail}")
+
+    try:
+        exported = json.loads(json_line)
+    except Exception as e:
+        raise RuntimeError(f"failed to parse irrp.py JSON line: {json_line[:200]}") from e
+
+    if not isinstance(exported, dict) or name not in exported:
+        raise RuntimeError(f"exported JSON did not include key '{name}'")
+
+    code_list = exported[name]
+    if not isinstance(code_list, list) or not code_list:
+        raise RuntimeError("recorded code is empty")
+    out: list[int] = []
+    for item in code_list:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            raise RuntimeError("recorded code contained non-numeric item")
+        out.append(int(item))
+    return out
 
 
 # col_query = db.collection('codes').where('state', '==', True)

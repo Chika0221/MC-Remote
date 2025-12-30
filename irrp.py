@@ -58,6 +58,7 @@ TRANSMIT
 import time
 import json
 import os
+import sys
 import argparse
 
 import pigpio # http://abyz.co.uk/rpi/pigpio/python.html
@@ -72,6 +73,15 @@ p.add_argument("-g", "--gpio", help="GPIO for RX/TX", required=True, type=int)
 p.add_argument("-f", "--file", help="Filename",       required=True)
 
 p.add_argument('id', nargs='*', type=str, help='IR codes')
+
+p.add_argument(
+   "--export",
+   default=None,
+   help=(
+      "When recording, export ONLY newly recorded codes as JSON. "
+      "Use '-' to write to stdout, otherwise writes to the given path."
+   ),
+)
 
 p.add_argument(
    "--code",
@@ -99,8 +109,21 @@ p.add_argument("--no-confirm", help="No confirm needed", action="store_true")
 
 args = p.parse_args()
 
+EXPORT_TO_STDOUT = bool(args.export == "-")
+
+def ui_print(*pargs, **pkwargs):
+   """Print UI/log messages.
+
+   When exporting JSON to stdout (`--export -`), keep stdout clean by
+   writing UI messages to stderr.
+   """
+   if EXPORT_TO_STDOUT:
+      pkwargs = dict(pkwargs)
+      pkwargs.setdefault("file", sys.stderr)
+   print(*pargs, **pkwargs)
+
 if args.record and (not args.id):
-   print("Nothing to record: provide one or more id values")
+   ui_print("Nothing to record: provide one or more id values")
    exit(0)
 
 GPIO       = args.gpio
@@ -388,7 +411,7 @@ def end_of_code():
       fetching_code = False
    else:
       code = []
-      print("Short code, probably a repeat, try again")
+      ui_print("Short code, probably a repeat, try again")
 
 def cbf(gpio, level, tick):
 
@@ -441,14 +464,15 @@ if args.record: # Record.
 
    # Process each id
 
-   print("Recording")
+   ui_print("Recording")
+   new_records = {}
    for arg in args.id:
-      print("Press key for '{}'".format(arg))
+      ui_print("Press key for '{}'".format(arg))
       code = []
       fetching_code = True
       while fetching_code:
          time.sleep(0.1)
-      print("Okay")
+      ui_print("Okay")
       time.sleep(0.5)
 
       if CONFIRM:
@@ -457,7 +481,7 @@ if args.record: # Record.
 
          tries = 0
          while not done:
-            print("Press key for '{}' to confirm".format(arg))
+            ui_print("Press key for '{}' to confirm".format(arg))
             code = []
             fetching_code = True
             while fetching_code:
@@ -467,18 +491,20 @@ if args.record: # Record.
             if the_same:
                done = True
                records[arg] = press_1[:]
-               print("Okay")
+               new_records[arg] = records[arg]
+               ui_print("Okay")
                time.sleep(0.5)
             else:
                tries += 1
                if tries <= 3:
-                  print("No match")
+                  ui_print("No match")
                else:
-                  print("Giving up on key '{}'".format(arg))
+                  ui_print("Giving up on key '{}'".format(arg))
                   done = True
                time.sleep(0.5)
       else: # No confirm.
          records[arg] = code[:]
+         new_records[arg] = records[arg]
 
    pi.set_glitch_filter(GPIO, 0) # Cancel glitch filter.
    pi.set_watchdog(GPIO, 0) # Cancel watchdog.
@@ -491,16 +517,28 @@ if args.record: # Record.
    f.write(json.dumps(records, sort_keys=True).replace("],", "],\n")+"\n")
    f.close()
 
+   if args.export is not None:
+      export_payload = json.dumps(new_records, sort_keys=True)
+      if args.export == "-":
+         print(export_payload)
+      else:
+         export_path = os.path.realpath(args.export)
+         export_dir = os.path.dirname(export_path)
+         if export_dir:
+            os.makedirs(export_dir, exist_ok=True)
+         with open(export_path, "w") as ef:
+            ef.write(export_payload + "\n")
+
 else: # Playback.
 
    if (not args.id) and (not args.code):
-      print("Nothing to play: provide one or more id values and/or --code")
+      ui_print("Nothing to play: provide one or more id values and/or --code")
       exit(0)
 
    try:
       f = open(FILE, "r")
    except:
-      print("Can't open: {}".format(FILE))
+      ui_print("Can't open: {}".format(FILE))
       exit(0)
 
    records = json.load(f)
@@ -565,7 +603,7 @@ else: # Playback.
             play_code(arg, code)
             emit_time = time.time() + GAP_S
          else:
-            print("Id {} not found".format(arg))
+            ui_print("Id {} not found".format(arg))
 
    # Then play raw codes passed via --code.
    if args.code:
@@ -576,7 +614,7 @@ else: # Playback.
          try:
             code_list = parse_code_arg(raw_code)
          except ValueError as e:
-            print("Invalid --code #{}: {}".format(idx, e))
+            ui_print("Invalid --code #{}: {}".format(idx, e))
             exit(0)
          play_code("raw#{}".format(idx), code_list)
          emit_time = time.time() + GAP_S
