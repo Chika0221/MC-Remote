@@ -31,23 +31,40 @@ def on_send_snapshot(col_snapshot, changes, read_time):
 
 def on_get_snapshot(col_snapshot, changes, read_time):
     print("あ")
-    for doc in col_snapshot:
+    # IMPORTANT: Updating a document triggers this callback again.
+    # Process only newly added docs to avoid re-processing on state updates.
+    for change in changes:
+        change_type = getattr(change.type, "name", str(change.type))
+        if change_type != "ADDED":
+            continue
+
+        doc = change.document
         print(f"{doc.id}")
 
         doc_dict = doc.to_dict()
+        name = (doc_dict.get("name") or "").strip()
+        if not name:
+            doc.reference.update({"state": "error", "error": "name is required"})
+            continue
+
+        # Notify clients that IR read is in progress.
+        doc.reference.update({"state": "reading"})
 
         try:
-            code_list = get_command(doc_dict["name"])
+            code_list = get_command(name)
         except Exception as e:
-            # Stop re-trigger loops; keep the request doc for inspection.
-            doc.reference.update({"state": False, "error": str(e)})
+            doc.reference.update({"state": "error", "error": str(e)})
             continue
 
         db.collection("codes").document().set({
-            "name": doc_dict["name"],
+            "name": name,
             "code": json.dumps(code_list),
             "state": False,
         })
+
+        # Optional: briefly mark as done before removal.
+        doc.reference.update({"state": "done"})
+        time.sleep(3)
         doc.reference.delete()
 
 def send_command(name: str, code: str) -> bool:
