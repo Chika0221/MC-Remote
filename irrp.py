@@ -535,15 +535,17 @@ else: # Playback.
       ui_print("Nothing to play: provide one or more id values and/or --code")
       exit(0)
 
-   try:
-      f = open(FILE, "r")
-   except:
-      ui_print("Can't open: {}".format(FILE))
-      exit(0)
+   records = {}
+   if args.id:
+      try:
+         f = open(FILE, "r")
+      except:
+         ui_print("Can't open: {}".format(FILE))
+         exit(0)
 
-   records = json.load(f)
+      records = json.load(f)
 
-   f.close()
+      f.close()
 
    pi.set_mode(GPIO, pigpio.OUTPUT) # IR TX connected to this GPIO.
 

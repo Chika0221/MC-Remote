@@ -1,4 +1,4 @@
 #!/bin/sh
-cd /home/chika/Projects/mc_beam/firebase
+cd /home/chika/dev/MC-Remote/firebase
 chmod +x transmission.py
-/usr/bin/python ./transmission.py
+/home/chika/dev/MC-Remote/.venv/bin/python ./transmission.py
