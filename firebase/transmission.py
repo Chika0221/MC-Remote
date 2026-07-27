@@ -14,7 +14,7 @@ IRRP_PATH = REPO_ROOT / "irrp.py"
 CODES_PATH = REPO_ROOT / "codes"
 
 
-cred = credentials.Certificate("/home/chika/Projects/mc_beam/firebase/mc-system-1a380-firebase-adminsdk-fbsvc-16af4e4f10.json")
+cred = credentials.Certificate("/home/chika/dev/MC-Remote/firebase/mc-system-1a380-firebase-adminsdk-fbsvc-377580f5e5.json")
 firebase_admin.initialize_app(cred)
 
 db = firestore.client()
