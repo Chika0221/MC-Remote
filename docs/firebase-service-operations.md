@@ -32,7 +32,7 @@ sudo systemctl stop mc-remote-firebase
 などの理由で一時的に止めたいだけなら `stop` のみでよい。
 
 ```sh
-sudo systemctl stop mc-remote-firebase
+
 # ... 手動でtransmission.pyを動かすなど、開発作業 ...
 sudo systemctl start mc-remote-firebase   # 作業が終わったら再開
 ```
